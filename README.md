@@ -1,6 +1,7 @@
 # PhantomSDR-Plus WebSDR
 ## Note: Please dont use Ubuntu 24.04, stick to Ubuntu 22.04 as it wont compile on 24.04!
 This is different Repo than the Official PhantomSDR Repo
+In case you want to use Debian, it has been tested on Bookworm.
 
 We offer more features as we only maintain support for Linux instead of the official repo
 - Futuristic Design
@@ -22,8 +23,11 @@ We offer more features as we only maintain support for Linux instead of the offi
 - Support for both IQ and real data
 
 ## Benchmarks
-- Ryzen 5 2600 - All Cores - RX888 MKii with 64MHZ Sample Rate, 32MHZ IQ takes up 38-40% - per User it takes about nothing, 50 Users dont even take 1% of the CPU.
+- Ryzen 5* 2600 - All Cores - RX888 MKii with 64MHZ Sample Rate, 32MHZ IQ takes up 38-40% - per User it takes about nothing, 50 Users dont even take 1% of the CPU.
 - RX 580 - RX888 MKII with 64MHZ Sample Rate, 32MHZ IQ takes up 28-35% - same as the Ryzen per User it takes about nothing (should handle many)
+- Intel i5-6500T - RX888 MKII - 60MHz Sample Rate, 30MHz IQ, OpenCL installed and enabled, about 10-12%. 100 users is no problem with OpenCL as the GPU does the heavy lifting.
+
+(* Ryzen CPU's with internal GPU do not support OpenCL, if you expect high performance add a videocard or use an modern Intel i5 or i7 that supports OpenCL.)
 
 ## Screenshots
 
