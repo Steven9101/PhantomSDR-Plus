@@ -36,10 +36,10 @@ void broadcast_server::check_and_update_markers() {
                     markers = new_markers;
                 }
             } catch (nlohmann::json::parse_error& e) {
-                std::cerr << "Error parsing marker.json: " << e.what() << std::endl;
+                std::cerr << "Error parsing " << marker_file << ": " << e.what() << std::endl;
             }
         } else {
-            std::cerr << "Unable to open marker.json file." << std::endl;
+            std::cerr << "Unable to open " << marker_file << " file." << std::endl;
         }
         std::this_thread::sleep_for(std::chrono::minutes(1));
     }
