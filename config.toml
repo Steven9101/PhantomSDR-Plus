@@ -10,6 +10,11 @@ name="ChangeThis" # Name that is shown on https://sdr-list.xyz
 antenna="ChangeThis" # Antenna that is shown on https://sdr-list.xyz
 grid_locator="ChangeThis" # 4 or 6 length Grid Locatlr shown on https://sdr-list.xyz and for the Distance of FT8 Signals
 hostname="" # If you use ddns or something to host with a domain enter it here for https://sdr-list.xyz
+operator="ChangeThis" # Operator name displayed in server info
+email="example@test.com" # Contact email displayed in server info
+callsign_lookup_url="https://www.qrz.com/db/" # URL for callsign lookups
+chat_enabled=true # Enable/disable chat functionality
+
 
 [limits]
 audio=1000
@@ -30,7 +35,7 @@ waterfall_compression="zstd" # zstd or av1
 smeter_offset=0
 
 [input.driver]
-name="stdin" # Driver name
+name="stdin" # Driver name: stdin
 format="u8" # Sample format: u8, s8, u16, s16, u32, s32, f32, f64
 
 [input.defaults]

@@ -1,31 +1,50 @@
+# PhantomSDR-Plus v2.0.0 Configuration Example - SDRPlay RSP1A
+# This configuration is optimized for SDRPlay RSP1A
+# Usage: rx_sdr -d driver=sdrplay -f 4000000 -s 8000000 - | ./spectrumserver --config config.toml
+
 [server]
-port=80 # Server port
-html_root="frontend/dist/" # HTML files to be hosted
-otherusers=1 # Send where other users are listening, 0 to disable
-threads=2
+port=80 # Server port for web interface (80 for HTTP, 443 for HTTPS)
+html_root="frontend/dist/" # Path to web interface files
+otherusers=1 # Show other users' listening frequencies (1=enabled, 0=disabled)
+threads=2 # Number of processing threads (RSP1A benefits from multiple threads)
 
 [websdr]
-register_online=false # If the SDR should be registered on https://sdr-list.xyz then put it to true
-name="ChangeThis" # Name that is shown on https://sdr-list.xyz
-antenna="ChangeThis" # Antenna that is shown on https://sdr-list.xyz
-grid_locator="ChangeThis" # 4 or 6 length Grid Locatlr shown on https://sdr-list.xyz and for the Distance of FT8 Signals
-hostname="" # If you use ddns or something to host with a domain enter it here for https://sdr-list.xyz
+register_online=false # Register WebSDR on https://sdr-list.xyz (true=public, false=private)
+name="My RSP1A WebSDR" # Station name displayed on sdr-list.xyz and web interface
+antenna="HF Dipole Array" # Antenna description shown to users
+grid_locator="JO20KV" # 4 or 6 character grid locator for distance calculations
+hostname="" # Domain name for public access (leave empty for local use)
+operator="Your Callsign" # Operator name/callsign displayed in station info
+email="your.email@example.com" # Contact email for station information
+callsign_lookup_url="https://www.qrz.com/db/" # URL for callsign lookups in server info panel
+chat_enabled=true # Enable/disable chat functionality (new in v2.0.0)
+
+[limits]
+# Connection limits to prevent server overload
+audio=1000 # Maximum audio connections
+waterfall=1000 # Maximum waterfall connections
+events=1000 # Maximum event connections
 
 [input]
-sps=8000000 # Input Sample Rate
-fft_size=1048576 # FFT bins
-fft_threads=2
-brightness_offset=-6 # Waterfall brightness offset. Reduce to negative if you see black regions in the waterfall
-frequency=4000000 # Baseband frequency
-signal="iq" # real or iq
-accelerator="opencl" # Accelerator: none, cuda, opencl
-audio_sps=44100 # Audio Sample Rate
-smeter_offset=-10
+# SDRPlay RSP1A optimized settings - HF/VHF coverage
+sps=8000000 # Input sample rate (RSP1A: up to 10MHz, 8MHz = 8MHz bandwidth)
+fft_size=1048576 # FFT bins for spectral analysis (large for good resolution)
+fft_threads=2 # Number of FFT processing threads
+brightness_offset=-6 # Waterfall brightness adjustment (RSP1A typically darker)
+frequency=4000000 # Center frequency in Hz (4MHz for HF coverage)
+signal="iq" # Signal type: "iq" for complex samples (RSP1A provides IQ)
+accelerator="opencl" # GPU acceleration recommended for high sample rates
+audio_sps=44100 # Audio sample rate for demodulated output (CD quality)
+audio_compression="flac" # Audio compression: "flac" (lossless only)
+waterfall_size=2048 # Waterfall display width in pixels
+waterfall_compression="zstd" # Waterfall compression: "zstd" only
+smeter_offset=-10 # S-meter calibration offset in dB (RSP1A specific)
 
 [input.driver]
-name="stdin" # Driver name
-format="s16" # Sample format: u8, s8, u16, s16, u32, s32, f32, f64
+name="stdin" # Input driver: "stdin" for piped data from rx_sdr
+format="s16" # Sample format for RSP1A: s16 (16-bit signed integers)
 
 [input.defaults]
-frequency=3645000 # Default frequency to show user
-modulation="LSB" # Default modulation
+# Default settings when users first connect
+frequency=3645000 # Default frequency to display (3.645MHz - 80m amateur band)
+modulation="LSB" # Default modulation mode: LSB for HF amateur bands

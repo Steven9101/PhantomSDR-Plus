@@ -67,6 +67,8 @@ class AudioClient : public Client {
     virtual void on_window_message(int l, std::optional<double> &m, int r,
                                    std::optional<int> &level);
     virtual void on_demodulation_message(std::string &demodulation);
+    virtual void on_agc_message(std::string &speed, std::optional<float> &attack, std::optional<float> &release);
+    virtual void on_buffer_message(std::string &size);
     void on_close();
 
     void send_audio(std::complex<float> *buf, size_t frame_num);

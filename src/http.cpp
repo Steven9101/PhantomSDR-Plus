@@ -3,6 +3,7 @@
 
 #include <filesystem>
 #include <fstream>
+#include <sstream>
 
 #include <boost/algorithm/string.hpp>
 
@@ -40,6 +41,25 @@ void broadcast_server::on_http(connection_hdl hdl) {
     std::string response;
 
     filename = filename.substr(0, filename.find("?"));
+    
+    // Handle server-info.json endpoint
+    if (filename == "/server-info.json") {
+        // Build JSON response with server info
+        std::stringstream json;
+        json << "{";
+        json << "\"serverName\":\"" << config["websdr"]["name"].value_or("PhantomSDR+") << "\",";
+        json << "\"location\":\"" << config["websdr"]["grid_locator"].value_or("Unknown") << "\",";
+        json << "\"operators\":[{\"name\":\"" << config["websdr"]["operator"].value_or("Anonymous") << "\"}],";
+        json << "\"email\":\"" << config["websdr"]["email"].value_or("contact@example.com") << "\",";
+        json << "\"chatEnabled\":" << (config["websdr"]["chat_enabled"].value_or(true) ? "true" : "false");
+        json << "}";
+        
+        con->append_header("content-type", "application/json");
+        con->append_header("Cache-Control", "max-age=30");
+        con->set_body(json.str());
+        con->set_status(websocketpp::http::status_code::ok);
+        return;
+    }
     // All the files are under the html root folder
     if (filename == "/") {
         filename = m_docroot + "/" + "index.html";

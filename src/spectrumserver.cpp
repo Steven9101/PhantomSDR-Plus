@@ -1,4 +1,7 @@
 #include "spectrumserver.h"
+#include "logger.h"
+
+#define PHANTOMSDR_VERSION "2.0.0"
 #include "samplereader.h"
 
 #include <cstdio>
@@ -32,14 +35,14 @@ void broadcast_server::check_and_update_markers() {
                 file.close();
 
                 if (new_markers != markers) {
-                    std::cout << "Markers updated." << std::endl;
+                    LOG_DEBUG("Markers", "Markers updated");
                     markers = new_markers;
                 }
             } catch (nlohmann::json::parse_error& e) {
-                std::cerr << "Error parsing marker.json: " << e.what() << std::endl;
+                LOG_ERROR("Markers", "Error parsing marker.json: " + std::string(e.what()));
             }
         } else {
-            std::cerr << "Unable to open marker.json file." << std::endl;
+            LOG_DEBUG("Markers", "marker.json not found (this is normal)");
         }
         std::this_thread::sleep_for(std::chrono::minutes(1));
     }
@@ -49,6 +52,7 @@ broadcast_server::broadcast_server(
     std::unique_ptr<SampleConverterBase> reader, toml::parse_result &config)
     : reader{std::move(reader)}, frame_num{0}, marker_update_running(false) {
 
+    LOG_DEBUG("Server", "Initializing broadcast server");
     
 
     server_threads = config["server"]["threads"].value_or(1);
@@ -79,6 +83,7 @@ broadcast_server::broadcast_server(
             : "";
     if (!signal_type.has_value() ||
         (signal_type_str != "real" && signal_type_str != "iq")) {
+        LOG_CRITICAL("Server", "Invalid signal type, specify either real or IQ input");
         throw "Invalid signal type, specify either real or IQ input";
     }
 
@@ -140,6 +145,10 @@ broadcast_server::broadcast_server(
         default_mode = AM;
         default_l = default_m - offsets_5;
         default_r = default_m + offsets_5;
+    } else if (default_mode_str == "SAM") {
+        default_mode = SAM;
+        default_l = default_m - offsets_5;
+        default_r = default_m + offsets_5;
     } else if (default_mode_str == "FM") {
         default_mode = FM;
         default_l = default_m - offsets_5;
@@ -166,6 +175,7 @@ broadcast_server::broadcast_server(
 #ifdef HAS_LIBAOM
         waterfall_compression = WATERFALL_AV1;
 #else
+        LOG_CRITICAL("Server", "AV1 support not compiled in");
         throw "AV1 support not compiled in";
 #endif
     }
@@ -176,6 +186,7 @@ broadcast_server::broadcast_server(
 #ifdef HAS_OPUS
         audio_compression = AUDIO_OPUS;
 #else
+        LOG_CRITICAL("Server", "Opus support not compiled in");
         throw "Opus support not compiled in";
 #endif
     }
@@ -225,6 +236,13 @@ broadcast_server::broadcast_server(
 
     // Initialize the websocket server
     m_server.init_asio();
+    LOG_INFO("Server", "FFT:" + std::to_string(fft_size) + 
+                       " | SPS:" + std::to_string(sps) + 
+                       " | Freq:" + std::to_string(basefreq/1000000) + "MHz" +
+                       " | " + std::string(is_real ? "Real" : "IQ") +
+                       " | Audio:" + audio_compression_str +
+                       " | WF:" + waterfall_compression_str);
+
     m_server.clear_access_channels(websocketpp::log::alevel::frame_header |
                                    websocketpp::log::alevel::frame_payload);
 
@@ -243,6 +261,7 @@ broadcast_server::broadcast_server(
 
 void broadcast_server::run(uint16_t port) {
     // Start the threads and handle the network
+    LOG_DEBUG("Server", "Starting server threads");
     running = true;
     marker_update_running = true;
     marker_update_thread = std::thread(&broadcast_server::check_and_update_markers, this);
@@ -260,9 +279,23 @@ void broadcast_server::run(uint16_t port) {
     std::vector<std::thread> threads;
     // Spawn one less thread, use main thread as well
     for (int i = 0; i < server_threads - 1; i++) {
-        threads.emplace_back(std::thread([&] { m_server.run(); }));
+        threads.emplace_back(std::thread([&] {
+            try {
+                m_server.run();
+            } catch (const std::exception& e) {
+                LOG_ERROR("Server", "Thread error: " + std::string(e.what()));
+                running = false;
+            }
+        }));
     }
-    m_server.run();
+    
+    try {
+        m_server.run();
+    } catch (const std::exception& e) {
+        LOG_ERROR("Server", "Main server error: " + std::string(e.what()));
+        running = false;
+    }
+    
     for (int i = 0; i < server_threads - 1; i++) {
         threads[i].join();
     }
@@ -275,6 +308,8 @@ void broadcast_server::run(uint16_t port) {
 
 // To register on http://sdr-list.xyz
 void broadcast_server::update_websdr_list() {
+    LOG_INFO("SDRList", "Starting SDR list registration thread");
+    
     // Seed the random number generator
     std::srand(std::time(nullptr));
 
@@ -287,8 +322,11 @@ void broadcast_server::update_websdr_list() {
     std::string websdr_name = config["websdr"]["name"].value_or("WebSDR_" + std::to_string(std::rand()));
     std::string signal_type = config["input"]["signal"].value_or("real");
     std::optional<int64_t> max_users = config["limits"]["audio"].value<int64_t>();
+    bool should_register = config["websdr"]["register_online"].value_or(false);
 
     std::string websdr_id = std::to_string(std::rand());
+    
+    LOG_INFO("SDRList", "SDR ID: " + websdr_id + ", Name: " + websdr_name);
     if(signal_type == "real")
     {
         bandwidth = bandwidth.value_or(30000000) / 2;
@@ -303,19 +341,23 @@ void broadcast_server::update_websdr_list() {
     CURL *curl = curl_easy_init();
     CURLcode res;
     if (!curl) {
-        std::cerr << "Failed to initialize cURL" << std::endl;
-        return; // Or handle the error appropriately
+        LOG_ERROR("SDRList", "Failed to initialize cURL");
+        return;
     }
 
     FILE *devnull = fopen("/dev/null", "w+");
     if (!devnull) {
-        std::cerr << "Failed to open /dev/null" << std::endl;
+        LOG_ERROR("SDRList", "Failed to open /dev/null");
         curl_easy_cleanup(curl);
-        return; // Or handle the error appropriately
+        return;
     }
     
-    while(true) {
-        int user_count = static_cast<int>(events_connections.size());
+    int retry_count = 0;
+    int backoff_seconds = 30; // Start with 30 seconds
+    const int max_backoff = 3600; // Max 1 hour
+    
+    while(running && should_register) {
+        int user_count = static_cast<int>(get_events_connections_size());
 
         // Construct JSON payload manually
         glz::json_t json_data = {
@@ -362,18 +404,33 @@ void broadcast_server::update_websdr_list() {
             res = curl_easy_perform(curl);
 
             // Check for errors
-            if(res != CURLE_OK)
-                std::cerr << "curl_easy_perform() failed: " << curl_easy_strerror(res) << std::endl;
+            if(res != CURLE_OK) {
+                LOG_ERROR("SDRList", "Registration failed: " + std::string(curl_easy_strerror(res)));
+                retry_count++;
+                
+                // Exponential backoff
+                int sleep_time = std::min(backoff_seconds * (1 << retry_count), max_backoff);
+                LOG_INFO("SDRList", "Retrying in " + std::to_string(sleep_time) + " seconds (attempt " + std::to_string(retry_count) + ")");
+                
+                curl_slist_free_all(headers);
+                std::this_thread::sleep_for(std::chrono::seconds(sleep_time));
+                continue;
+            } else {
+                // Success - reset retry count
+                if (retry_count > 0) {
+                    LOG_INFO("SDRList", "Registration successful after " + std::to_string(retry_count) + " retries");
+                }
+                retry_count = 0;
+                backoff_seconds = 30; // Reset backoff
+                
+                LOG_DEBUG("SDRList", "Updated SDR list - Users: " + std::to_string(user_count));
+            }
 
             curl_slist_free_all(headers);
-
-
-            
-
         }
 
-        // Delay for 10 seconds before sending the next request
-        std::this_thread::sleep_for(std::chrono::seconds(10));
+        // Regular update interval (60 seconds)
+        std::this_thread::sleep_for(std::chrono::seconds(60));
     }
                // Clean up
 
@@ -383,6 +440,7 @@ void broadcast_server::update_websdr_list() {
 
 
 void broadcast_server::stop() {
+    LOG_INFO("Server", "Shutting down server");
     running = false;
     marker_update_running = false;
     fft_processed.notify_all();
@@ -410,7 +468,12 @@ void broadcast_server::stop() {
             }
         }
     }
-    for (auto &it : events_connections) {
+    event_con_list connections_copy;
+    {
+        std::scoped_lock lock(events_connections_mtx);
+        connections_copy = events_connections;
+    }
+    for (auto &it : connections_copy) {
         websocketpp::lib::error_code ec;
         try {
             m_server.close(it, websocketpp::close::status::going_away, "", ec);
@@ -425,7 +488,10 @@ broadcast_server *g_signal;
 
 int main(int argc, char **argv) {
     // Parse the options
-    std::string config_file;
+    std::string config_file = "config.toml";
+    std::string log_file = "";
+    bool debug_mode = false;
+    
     for (int i = 1; i < argc; i++) {
         if ((std::string(argv[i]) == "-c" ||
              std::string(argv[i]) == "--config") &&
@@ -433,27 +499,85 @@ int main(int argc, char **argv) {
             config_file = argv[i + 1];
             i++;
         }
-        if (std::string(argv[i]) == "-h" || std::string(argv[i]) == "--help") {
+        else if (std::string(argv[i]) == "-l" ||
+                 std::string(argv[i]) == "--log") {
+            if (i + 1 < argc) {
+                log_file = argv[i + 1];
+                i++;
+            } else {
+                std::cerr << "Error: -l/--log option requires a filename argument" << std::endl;
+                return 1;
+            }
+        }
+        else if (std::string(argv[i]) == "-d" || std::string(argv[i]) == "--debug") {
+            debug_mode = true;
+        }
+        else if (std::string(argv[i]) == "-h" || std::string(argv[i]) == "--help") {
             std::cout
+                << "PhantomSDR+ v" << PHANTOMSDR_VERSION << " - Open Source WebSDR\n\n"
                 << "Options:\n"
-                   "--help                             produce help message\n"
-                   "-c [ --config ] arg (=config.toml) config file\n";
+                   "  -h, --help                          Show this help message\n"
+                   "  -c, --config <file>                 Config file (default: config.toml)\n"
+                   "  -l, --log <file>                    Log to file\n"
+                   "  -d, --debug                         Enable debug logging\n";
             return 0;
         }
     }
+    
+    // Initialize logger
+    Logger& logger = Logger::getInstance();
+    if (!log_file.empty()) {
+        if (!logger.set_log_file(log_file)) {
+            std::cerr << "Error: Cannot open log file '" << log_file << "' for writing" << std::endl;
+            return 1;
+        }
+    }
+    if (debug_mode) {
+        logger.set_min_level(LogLevel::DEBUG);
+    }
 
-    std::cout << "\r\n __                   __ __  __      \r\n|__)|_  _  _ |_ _  _ (_ |  \\|__) _|_ \r\n|   | )(_|| )|_(_)|||__)|__/| \\   |  \r\n                                     " << std::endl;
-    std::cout << "Thank you for using PhantomSDR+, you are supporting the Development of an Open-Source WebSDR Project ♥" << std::endl;
+    // ANSI color codes for banner
+    const std::string RESET = "\033[0m";
+    const std::string BOLD = "\033[1m";
+    const std::string CYAN = "\033[36m";
+    const std::string GREEN = "\033[32m";
+    const std::string YELLOW = "\033[33m";
+    const std::string MAGENTA = "\033[35m";
+    const std::string BLUE = "\033[34m";
+    const std::string RED = "\033[31m";
 
-    config = toml::parse_file(config_file);
+    // Create banner with proper alignment
+    std::string line1 = std::string("       PhantomSDR+ v") + PHANTOMSDR_VERSION + "         ";
+    std::string line2 = "     Open Source WebSDR System       ";
+    
+    // Ensure both lines are exactly 41 chars (box width - 2 for borders)
+    line1.resize(41, ' ');
+    line2.resize(41, ' ');
+    
+    logger.banner("");
+    logger.banner(CYAN + "┌─────────────────────────────────────────┐" + RESET);
+    logger.banner(CYAN + "│" + RESET + BOLD + YELLOW + line1 + RESET + CYAN + "│" + RESET);
+    logger.banner(CYAN + "│" + RESET + GREEN + line2 + RESET + CYAN + "│" + RESET);
+    logger.banner(CYAN + "└─────────────────────────────────────────┘" + RESET);
+    
+    logger.banner(BLUE + " ◆ " + RESET + "AGC Speed " + BLUE + "◆ " + RESET + "Buffer Control " + BLUE + "◆ " + RESET + "Keybinds " + BLUE + "◆ " + RESET + "Server Info");
+    logger.banner(BLUE + " ◆ " + RESET + "Freq Lookup " + BLUE + "◆ " + RESET + "Callsigns " + BLUE + "◆ " + RESET + "Audio Stats " + BLUE + "◆ " + RESET + "Logging\n");
+
+    LOG_INFO("Main", "Loading configuration from: " + config_file);
+    try {
+        config = toml::parse_file(config_file);
+    } catch (const toml::parse_error& err) {
+        LOG_CRITICAL("Main", "Failed to parse config file: " + std::string(err.what()));
+        return 1;
+    }
 
     std::string host = config["server"]["host"].value_or("0.0.0.0");
 
     std::optional<std::string> driver_type =
         config["input"]["driver"]["name"].value<std::string>();
     if (!driver_type.has_value()) {
-        std::cout << "Specify an input driver" << std::endl;
-        return 0;
+        LOG_CRITICAL("Main", "No input driver specified in config");
+        return 1;
     }
     std::string driver_str = driver_type.value();
 
@@ -467,10 +591,19 @@ int main(int argc, char **argv) {
         fftwf_init_threads();
     }
 
-    // Set input to binary
-    freopen(NULL, "rb", stdin);
-    std::unique_ptr<SampleReader> reader =
-        std::make_unique<FileSampleReader>(stdin);
+    // Create sample reader based on driver type
+    std::unique_ptr<SampleReader> reader;
+    
+    if (driver_str == "stdin") {
+        // Set input to binary
+        freopen(NULL, "rb", stdin);
+        reader = std::make_unique<FileSampleReader>(stdin);
+    }
+    else {
+        LOG_CRITICAL("Main", "Unknown driver: " + driver_str);
+        return 1;
+    }
+    
     std::unique_ptr<SampleConverterBase> driver;
 
     if (input_format == "u8") {
@@ -479,9 +612,11 @@ int main(int argc, char **argv) {
         driver = std::make_unique<SampleConverter<int8_t>>(std::move(reader));
     } else if (input_format == "u16") {
         driver = std::make_unique<SampleConverter<uint16_t>>(std::move(reader));
-    } else if (input_format == "s16") {
+    } else if (input_format == "s16" || input_format == "cs16") {
+        // Both s16 and cs16 use int16_t converter
         driver = std::make_unique<SampleConverter<int16_t>>(std::move(reader));
-    } else if (input_format == "f32") {
+    } else if (input_format == "f32" || input_format == "cf32") {
+        // Both f32 and cf32 use float converter
         driver = std::make_unique<SampleConverter<float>>(std::move(reader));
     } else if (input_format == "f64") {
         driver = std::make_unique<SampleConverter<double>>(std::move(reader));
@@ -493,14 +628,50 @@ int main(int argc, char **argv) {
 
     int port = config["server"]["port"].value_or(9002);
     bool register_online = config["websdr"]["register_online"].value_or(false);
-    broadcast_server server(std::move(driver), config);
+    
+    // Display configured server information in a compact format
+    std::string chat_status = config["websdr"]["chat_enabled"].value_or(true) ? "ON" : "OFF";
+    std::string reg_status = register_online ? "YES" : "NO";
+    
+    logger.banner("\n" + GREEN + "[CONFIG] " + RESET + 
+                  "Port:" + std::to_string(port) + 
+                  " | " + config["websdr"]["name"].value_or("NoName") + 
+                  " @ " + config["websdr"]["grid_locator"].value_or("NoLoc") + 
+                  " | Chat:" + chat_status + 
+                  " | Register:" + reg_status);
+    
+    try {
+        broadcast_server server(std::move(driver), config);
 
-    if(register_online) {
-        std::thread websdr_thread(&broadcast_server::update_websdr_list, &server); // Pass the instance to the thread
-        websdr_thread.detach(); // or websdr_thread.join();
+        // Always start the SDR list thread - it will check the config internally
+        std::thread websdr_thread(&broadcast_server::update_websdr_list, &server);
+        websdr_thread.detach();
+        
+        if(register_online) {
+            LOG_INFO("Main", "SDR list registration enabled");
+        } else {
+            LOG_INFO("Main", "SDR list registration disabled - set register_online=true to enable");
+        }
+        g_signal = &server;
+        std::signal(SIGINT, [](int) { g_signal->stop(); });
+        
+        logger.banner(CYAN + "\n→ Starting on http://localhost:" + std::to_string(port) + RESET);
+        
+        server.run(port);
+    } catch (const std::bad_alloc& e) {
+        LOG_CRITICAL("Main", "Out of memory: " + std::string(e.what()));
+        LOG_CRITICAL("Main", "Try reducing fft_size in config.toml");
+        return 1;
+    } catch (const std::runtime_error& e) {
+        LOG_CRITICAL("Main", "Runtime error: " + std::string(e.what()));
+        return 1;
+    } catch (const std::exception& e) {
+        LOG_CRITICAL("Main", "Unexpected error: " + std::string(e.what()));
+        return 1;
+    } catch (...) {
+        LOG_CRITICAL("Main", "Unknown error occurred");
+        return 1;
     }
-    g_signal = &server;
-    std::signal(SIGINT, [](int) { g_signal->stop(); });
-    server.run(port);
+    
     std::exit(0);
 }

@@ -1,15 +1,23 @@
+# PhantomSDR-Plus v2.0.0 Configuration Example - RX888 MK2
+# This configuration is optimized for RX888 MK2 direct sampling SDR
+# Usage: rx888_stream -s 60000000 | ./spectrumserver --config config.toml
+
 [server]
-port=80 # Server port
-html_root="frontend/dist/" # HTML files to be hosted
-otherusers=1 # Send where other users are listening, 0 to disable
-threads=2
+port=80 # Server port for web interface (80 for HTTP, 443 for HTTPS)
+html_root="frontend/dist/" # Path to web interface files
+otherusers=1 # Show other users' listening frequencies (1=enabled, 0=disabled)
+threads=2 # Number of processing threads (RX888 MK2 benefits from multiple threads)
 
 [websdr]
-register_online=false # If the SDR should be registered on https://sdr-list.xyz then put it to true
-name="ChangeThis" # Name that is shown on https://sdr-list.xyz
-antenna="ChangeThis" # Antenna that is shown on https://sdr-list.xyz
-grid_locator="ChangeThis" # 4 or 6 length Grid Locatlr shown on https://sdr-list.xyz and for the Distance of FT8 Signals
-hostname="" # If you use ddns or something to host with a domain enter it here for https://sdr-list.xyz
+register_online=false # Register WebSDR on https://sdr-list.xyz (true=public, false=private)
+name="My RX888 MK2 WebSDR" # Station name displayed on sdr-list.xyz and web interface
+antenna="HF Long Wire" # Antenna description shown to users
+grid_locator="JO20KV" # 4 or 6 character grid locator for distance calculations
+hostname="" # Domain name for public access (leave empty for local use)
+operator="Your Callsign" # Operator name/callsign displayed in station info
+email="your.email@example.com" # Contact email for station information
+callsign_lookup_url="https://www.qrz.com/db/" # URL for callsign lookups in server info panel
+chat_enabled=true # Enable/disable chat functionality (new in v2.0.0)
 
 [limits]
 audio=1000
@@ -17,23 +25,25 @@ waterfall=1000
 events=1000
 
 [input]
-sps=60000000 # Input Sample Rate
-fft_size=8388608 # FFT bins
-fft_threads=2
-brightness_offset=0 # Waterfall brightness offset. Reduce to negative if you see black regions in the waterfall
-frequency=0 # Baseband frequency
-signal="real" # real or iq
-accelerator="opencl" # Accelerator: none, cuda, opencl
-audio_sps=44100 # Audio Sample Rate
-audio_compression="flac" # flac or opus
-waterfall_size=2048
-waterfall_compression="zstd" # zstd or av1
-smeter_offset=0
+# RX888 MK2 optimized settings - Ultra high sample rate direct sampling
+sps=60000000 # Input sample rate (RX888 MK2: up to 64MHz, 60MHz = 30MHz bandwidth)
+fft_size=8388608 # FFT bins for spectral analysis (very large for ultra-high sample rates)
+fft_threads=2 # Number of FFT processing threads
+brightness_offset=0 # Waterfall brightness adjustment (-50 to +50, negative = darker)
+frequency=0 # Center frequency in Hz (0 = direct sampling from 0Hz)
+signal="real" # Signal type: "real" for direct sampling (RX888 MK2 direct sampling)
+accelerator="opencl" # GPU acceleration REQUIRED for ultra-high sample rates
+audio_sps=44100 # Audio sample rate for demodulated output (CD quality)
+audio_compression="flac" # Audio compression: "flac" (lossless only)
+waterfall_size=2048 # Waterfall display width in pixels
+waterfall_compression="zstd" # Waterfall compression: "zstd" only
+smeter_offset=0 # S-meter calibration offset in dB
 
 [input.driver]
-name="stdin" # Driver name
-format="s16" # Sample format: u8, s8, u16, s16, u32, s32, f32, f64
+name="stdin" # Input driver: "stdin" for piped data from rx888_stream
+format="s16" # Sample format for RX888 MK2: s16 (16-bit signed integers)
 
 [input.defaults]
-frequency=3645000 # Default frequency to show user
-modulation="LSB" # Default modulation
+# Default settings when users first connect
+frequency=3645000 # Default frequency to display (3.645MHz - 80m amateur band)
+modulation="LSB" # Default modulation mode: LSB for HF amateur bands

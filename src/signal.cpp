@@ -4,6 +4,7 @@
 #include "fft.h"
 #include "signal.h"
 #include "utils/dsp.h"
+#include "logger.h"
 
 #include <atomic>
 #include <chrono>
@@ -199,7 +200,7 @@ void AudioClient::send_audio(std::complex<float> *buf, size_t frame_num) {
             // Overlap and add the audio waveform, due to the 50% overlap
             dsp_add_float(audio_real.data(), audio_real_prev.data(),
                           audio_fft_size / 2);
-        } else if (demodulation == AM || demodulation == FM) {
+        } else if (demodulation == AM || demodulation == SAM || demodulation == FM) {
             // For AM, copy the bins to the complex baseband frequencies
             std::fill(audio_fft_input.get(),
                       audio_fft_input.get() + audio_fft_size, 0.0f);
@@ -231,7 +232,7 @@ void AudioClient::send_audio(std::complex<float> *buf, size_t frame_num) {
                       audio_complex_baseband.get() + audio_fft_size,
                       audio_complex_baseband_prev.get());
 
-            if (demodulation == AM) {
+            if (demodulation == AM || demodulation == SAM) {
                 // Carrier
                 std::copy(audio_complex_baseband_carrier.get() +
                               audio_fft_size / 2,
@@ -241,7 +242,7 @@ void AudioClient::send_audio(std::complex<float> *buf, size_t frame_num) {
             // Copy the bins to the complex baseband frequencies
             // Remove DC
             fftwf_execute(p_complex);
-            if (demodulation == AM) {
+            if (demodulation == AM || demodulation == SAM) {
                 // Keep only the low frequencies < 500Hz
                 int cutoff = 500 * audio_fft_size / audio_rate;
                 std::fill(audio_fft_input.get() + cutoff,
@@ -256,7 +257,7 @@ void AudioClient::send_audio(std::complex<float> *buf, size_t frame_num) {
                 // even, then the signal is inverted
                 dsp_negate_complex(audio_complex_baseband.get(),
                                    audio_fft_size);
-                if (demodulation == AM) {
+                if (demodulation == AM || demodulation == SAM) {
                     dsp_negate_complex(audio_complex_baseband_carrier.get(),
                                        audio_fft_size);
                 }
@@ -264,7 +265,7 @@ void AudioClient::send_audio(std::complex<float> *buf, size_t frame_num) {
             dsp_add_complex(audio_complex_baseband.get(),
                             audio_complex_baseband_prev.get(),
                             audio_fft_size / 2);
-            if (demodulation == AM) {
+            if (demodulation == AM || demodulation == SAM) {
                 dsp_add_complex(audio_complex_baseband_carrier.get(),
                                 audio_complex_baseband_carrier_prev.get(),
                                 audio_fft_size / 2);
@@ -292,9 +293,31 @@ void AudioClient::send_audio(std::complex<float> *buf, size_t frame_num) {
                 dsp_am_demod(audio_complex_baseband.get(), audio_real.data(),
                              audio_fft_size / 2);
 #endif*/
-                // Envelope detection for AM - Stick to this, its better mostly
-                dsp_am_demod(audio_complex_baseband.get(), audio_real.data(),
-                             audio_fft_size / 2);
+                if (demodulation == AM) {
+                    // Envelope detection for AM
+                    dsp_am_demod(audio_complex_baseband.get(), audio_real.data(),
+                                 audio_fft_size / 2);
+                } else if (demodulation == SAM) {
+#ifndef HAS_LIQUID
+                    throw std::runtime_error("SAM demodulation requires liquid-dsp library. Please compile with liquid-dsp support.");
+#else
+                    // SAM demodulation with PLL optimization
+                    nco_crcf_pll_set_bandwidth(mixer, 0.1f);
+                    agc_crcf q = agc_crcf_create();
+                    agc_crcf_set_bandwidth(q, 0.1f);
+                    for (int i = 0; i < audio_fft_size / 2; i++) {
+                        std::complex<float> v0, v1;
+                        agc_crcf_execute(q, audio_complex_baseband[i], &v0);
+                        nco_crcf_mix_down(mixer, audio_complex_baseband_carrier[i], &v0);
+                        nco_crcf_mix_down(mixer, audio_complex_baseband[i], &v1);
+                        float phase_error = std::arg(v0);
+                        nco_crcf_pll_step(mixer, phase_error);
+                        nco_crcf_step(mixer);
+                        audio_real[i] = v1.real();
+                    }
+                    agc_crcf_destroy(q);
+#endif
+                }
             }
             if (demodulation == FM) {
                 // Polar discriminator for FM
@@ -368,10 +391,56 @@ void AudioClient::on_demodulation_message(std::string &demodulation) {
         this->demodulation = LSB;
     } else if (demodulation == "AM") {
         this->demodulation = AM;
+    } else if (demodulation == "SAM") {
+        this->demodulation = SAM;
     } else if (demodulation == "FM") {
         this->demodulation = FM;
     }
     this->agc.reset();
+}
+
+void AudioClient::on_agc_message(std::string &speed, std::optional<float> &attack, std::optional<float> &release) {
+    // Update AGC speed parameters
+    float attack_time_s, release_time_s;
+    
+    if (speed == "custom" && attack.has_value() && release.has_value()) {
+        // Use custom values (in seconds)
+        attack_time_s = attack.value() / 1000.0f;  // Convert ms to seconds
+        release_time_s = release.value() / 1000.0f;  // Convert ms to seconds
+    } else if (speed == "off") {
+        // Disable AGC by setting very fast attack and release
+        attack_time_s = 0.0001f;  // 0.1ms
+        release_time_s = 0.0001f;  // 0.1ms
+    } else if (speed == "fast") {
+        attack_time_s = 0.001f;  // 1ms
+        release_time_s = 0.05f;  // 50ms
+    } else if (speed == "slow") {
+        attack_time_s = 0.05f;   // 50ms
+        release_time_s = 0.5f;   // 500ms
+    } else if (speed == "medium") {
+        attack_time_s = 0.01f;   // 10ms
+        release_time_s = 0.15f;  // 150ms
+    } else { // default
+        attack_time_s = 0.003f;  // 3ms
+        release_time_s = 0.25f;  // 250ms
+    }
+    
+    // Convert to coefficients using sample rate
+    float sample_rate = (float)audio_rate;
+    agc.set_attack_coeff(1 - exp(-1.0f / (attack_time_s * sample_rate)));
+    agc.set_release_coeff(1 - exp(-1.0f / (release_time_s * sample_rate)));
+    
+    // Only log AGC changes for non-custom modes to avoid spam
+    if (speed != "custom") {
+        Logger::getInstance().info("AUDIO", "AGC speed set to: " + speed + " for client " + unique_id);
+    }
+}
+
+void AudioClient::on_buffer_message(std::string &size) {
+    // Buffer size affects client-side buffering, log for debugging
+    Logger::getInstance().info("AUDIO", "Buffer size set to: " + size + " for client " + unique_id);
+    // The actual buffer management is handled on the frontend
+    // This is mainly for logging and potential future backend optimizations
 }
 
 void AudioClient::on_close() {

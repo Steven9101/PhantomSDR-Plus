@@ -34,7 +34,7 @@ class broadcast_server : public PacketSender {
     void stop();
 
     size_t get_events_connections_size() {
-
+        std::scoped_lock lock(events_connections_mtx);
         return events_connections.size();
     }
 
@@ -155,10 +155,14 @@ class broadcast_server : public PacketSender {
     std::deque<std::mutex> waterfall_slice_mtx;
 
     event_con_list events_connections;
+    std::mutex events_connections_mtx;  // Protect events_connections access
     
     std::unordered_map<std::string, std::tuple<int, double, int>>
         signal_changes;
     std::mutex signal_changes_mtx;
+    
+    // Mutex to protect WebSocket send operations
+    mutable std::mutex websocket_send_mtx;
 
     // FFT output to send to clients
     std::complex<float> *fft_buffer;

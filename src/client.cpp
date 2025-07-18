@@ -76,6 +76,9 @@ struct glz::meta<mute_cmd>
 struct chat_cmd {
     std::string message;
     std::string username;
+    std::optional<std::string> user_id;
+    std::optional<std::string> reply_to_id;
+    std::optional<std::string> reply_to_username;
 };
 
 template <>
@@ -84,11 +87,44 @@ struct glz::meta<chat_cmd>
     using T = chat_cmd;
     static constexpr auto value = object(
         "message", &T::message,
-        "username", &T::username
+        "username", &T::username,
+        "user_id", &T::user_id,
+        "reply_to_id", &T::reply_to_id,
+        "reply_to_username", &T::reply_to_username
     );
 };
 
-using msg_variant = std::variant<window_cmd, demodulation_cmd, userid_cmd, mute_cmd, chat_cmd>;
+struct agc_cmd {
+    std::string speed;
+    std::optional<float> attack;
+    std::optional<float> release;
+};
+
+template <>
+struct glz::meta<agc_cmd>
+{
+    using T = agc_cmd;
+    static constexpr auto value = object(
+        "speed", &T::speed,
+        "attack", &T::attack,
+        "release", &T::release
+    );
+};
+
+struct buffer_cmd {
+    std::string size;
+};
+
+template <>
+struct glz::meta<buffer_cmd>
+{
+    using T = buffer_cmd;
+    static constexpr auto value = object(
+        "size", &T::size
+    );
+};
+
+using msg_variant = std::variant<window_cmd, demodulation_cmd, userid_cmd, mute_cmd, chat_cmd, agc_cmd, buffer_cmd>;
 
 template <>
 struct glz::meta<msg_variant>
@@ -99,7 +135,9 @@ struct glz::meta<msg_variant>
         "demodulation",
         "userid",
         "mute",
-        "chat"
+        "chat",
+        "agc",
+        "buffer"
     };
 };
 
@@ -126,10 +164,19 @@ void Client::on_message(std::string &msg) {
                 on_userid_message(cmd.userid);
             },
             [&](chat_cmd &cmd) {
-                on_chat_message(hdl, cmd.username, cmd.message);
+                std::string user_id = cmd.user_id.value_or("legacy_" + std::to_string(reinterpret_cast<uintptr_t>(hdl.lock().get())));
+                std::string reply_to_id = cmd.reply_to_id.value_or("");
+                std::string reply_to_username = cmd.reply_to_username.value_or("");
+                on_chat_message(hdl, user_id, cmd.username, cmd.message, reply_to_id, reply_to_username);
             },
             [&](mute_cmd &cmd) {
                 on_mute(cmd.mute);
+            },
+            [&](agc_cmd &cmd) {
+                on_agc_message(cmd.speed, cmd.attack, cmd.release);
+            },
+            [&](buffer_cmd &cmd) {
+                on_buffer_message(cmd.size);
             }
         },
         msg_parsed);
@@ -138,9 +185,15 @@ void Client::on_message(std::string &msg) {
 void Client::on_window_message(int, std::optional<double> &, int,
                                std::optional<int> &) {}
 void Client::on_demodulation_message(std::string &) {}
-void Client::on_chat_message(connection_hdl, std::string &, std::string &) {}
+void Client::on_chat_message(connection_hdl, std::string &, std::string &, std::string &, std::string &, std::string &) {}
+void Client::on_agc_message(std::string &, std::optional<float> &, std::optional<float> &) {}
+void Client::on_buffer_message(std::string &) {}
 void Client::on_userid_message(std::string &userid) {
     // Used for correlating between signal and waterfall sockets
-    user_id = userid.substr(0, 32);
+    if (userid.length() >= 32) {
+        user_id = userid.substr(0, 32);
+    } else {
+        user_id = userid;
+    }
 }
 void Client::on_mute(bool mute) { this->mute = mute; }

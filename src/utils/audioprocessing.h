@@ -61,6 +61,8 @@ class AGC {
         float sr = 44100.0f);
     void process(float *arr, size_t len);
     void reset();
+    void set_attack_coeff(float coeff) { attack_coeff = coeff; }
+    void set_release_coeff(float coeff) { release_coeff = coeff; }
 };
 
 #endif

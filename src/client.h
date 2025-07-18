@@ -43,7 +43,7 @@ constexpr const char *type_to_name(conn_type type) {
     }
 }
 
-enum demodulation_mode { USB, LSB, AM, FM };
+enum demodulation_mode { USB, LSB, AM, SAM, FM };
 
 enum waterfall_compressor { WATERFALL_ZSTD, WATERFALL_AV1 };
 
@@ -96,8 +96,10 @@ class Client {
                                    std::optional<int> &level);
     virtual void on_demodulation_message(std::string &demodulation);
     virtual void on_userid_message(std::string &userid);
-    virtual void on_chat_message(connection_hdl sender_hdl, std::string &userid, std::string &message);
+    virtual void on_chat_message(connection_hdl sender_hdl, std::string &user_id, std::string &username, std::string &message, std::string &reply_to_id, std::string &reply_to_username);
     virtual void on_mute(bool mute);
+    virtual void on_agc_message(std::string &speed, std::optional<float> &attack, std::optional<float> &release);
+    virtual void on_buffer_message(std::string &size);
 
     // Type of connection
     conn_type type;

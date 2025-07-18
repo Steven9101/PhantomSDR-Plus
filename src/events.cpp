@@ -90,9 +90,11 @@ void broadcast_server::broadcast_signal_changes(const std::string &unique_id,
 }
 
 void broadcast_server::on_open_events(connection_hdl hdl) {
-    events_connections.insert(hdl);
-    m_server.send(hdl, get_initial_state_info(),
-                  websocketpp::frame::opcode::text);
+    {
+        std::scoped_lock lock(events_connections_mtx);
+        events_connections.insert(hdl);
+    }
+    send_text_packet(hdl, get_initial_state_info());
 
     server::connection_ptr con = m_server.get_con_from_hdl(hdl);
     con->set_close_handler(std::bind(&broadcast_server::on_close_events, this,
@@ -102,6 +104,7 @@ void broadcast_server::on_open_events(connection_hdl hdl) {
     });
 }
 void broadcast_server::on_close_events(connection_hdl hdl) {
+    std::scoped_lock lock(events_connections_mtx);
     events_connections.erase(hdl);
 }
 
@@ -120,10 +123,16 @@ void broadcast_server::on_timer(websocketpp::lib::error_code const &ec) {
     std::string info = get_event_info();
     // Broadcast count to all connections
     if (info.length() != 0) {
-        for (auto &it : events_connections) {
+        event_con_list connections_copy;
+        {
+            std::scoped_lock lock(events_connections_mtx);
+            connections_copy = events_connections;
+        }
+        for (auto &it : connections_copy) {
             try {
-                m_server.send(it, info, websocketpp::frame::opcode::text);
+                send_text_packet(it, info);
             } catch (...) {
+                // Ignore send errors
             }
         }
     }

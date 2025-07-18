@@ -7,7 +7,16 @@
 #include "glaze/glaze.hpp"
 
 void broadcast_server::on_open(connection_hdl hdl) {
-    server::connection_ptr con = m_server.get_con_from_hdl(hdl);
+    server::connection_ptr con;
+    try {
+        con = m_server.get_con_from_hdl(hdl);
+        if (!con) {
+            return;
+        }
+    } catch (const std::exception& e) {
+        std::cerr << "Failed to get connection from handle: " << e.what() << std::endl;
+        return;
+    }
     std::string path = con->get_resource();
 
     if (path == "/audio") {
@@ -30,6 +39,9 @@ void broadcast_server::on_open(connection_hdl hdl) {
 
 void broadcast_server::on_open_unknown(connection_hdl hdl) {
     server::connection_ptr con = m_server.get_con_from_hdl(hdl);
+    if (!con) {
+        return;
+    }
     con->set_close_handler([](connection_hdl) {}); // No-op
 
     // Immediately close
@@ -68,14 +80,28 @@ void broadcast_server::send_basic_info(connection_hdl hdl) {
         {"markers", markers.dump()}  
     };
     
-    m_server.send(hdl, glz::write_json(json), websocketpp::frame::opcode::text);
+    try {
+        std::scoped_lock lock(websocket_send_mtx);
+        m_server.send(hdl, glz::write_json(json), websocketpp::frame::opcode::text);
+    } catch (const websocketpp::exception& e) {
+        // Connection closed before we could send info
+    }
 }
 
 // PacketSender---------------------------------------------------------------
 void broadcast_server::send_binary_packet(
     connection_hdl hdl,
     const std::initializer_list<std::pair<const void *, size_t>> &bufs) {
-    auto con = m_server.get_con_from_hdl(hdl);
+    server::connection_ptr con;
+    try {
+        con = m_server.get_con_from_hdl(hdl);
+        if (!con) {
+            return;
+        }
+    } catch (const std::exception& e) {
+        // Connection likely closed, silently ignore
+        return;
+    }
     auto total_size =
         std::accumulate(bufs.begin(), bufs.end(), 0,
                         [](size_t acc, auto &p) { return acc + p.second; });
@@ -84,15 +110,32 @@ void broadcast_server::send_binary_packet(
     for (auto &[buf, len] : bufs) {
         msg_ptr->append_payload(buf, len);
     }
-    con->send(msg_ptr);
+    {
+        std::scoped_lock lock(websocket_send_mtx);
+        con->send(msg_ptr);
+    }
 }
 void broadcast_server::send_binary_packet(connection_hdl hdl, const void *buf,
                                           size_t len) {
-    m_server.send(hdl, buf, len, websocketpp::frame::opcode::binary);
+    try {
+        std::scoped_lock lock(websocket_send_mtx);
+        m_server.send(hdl, buf, len, websocketpp::frame::opcode::binary);
+    } catch (const websocketpp::exception& e) {
+        // Connection closed, silently ignore
+    }
 }
 void broadcast_server::send_text_packet(
     connection_hdl hdl, const std::initializer_list<std::string> &data) {
-    auto con = m_server.get_con_from_hdl(hdl);
+    server::connection_ptr con;
+    try {
+        con = m_server.get_con_from_hdl(hdl);
+        if (!con) {
+            return;
+        }
+    } catch (const std::exception& e) {
+        // Connection likely closed, silently ignore
+        return;
+    }
     auto total_size = std::accumulate(
         data.begin(), data.end(), 0,
         [](size_t acc, const std::string &str) { return acc + str.size(); });
@@ -101,17 +144,33 @@ void broadcast_server::send_text_packet(
     for (auto &str : data) {
         msg_ptr->append_payload(str);
     }
-    con->send(msg_ptr);
+    {
+        std::scoped_lock lock(websocket_send_mtx);
+        con->send(msg_ptr);
+    }
 }
 void broadcast_server::send_text_packet(connection_hdl hdl,
                                         const std::string &str) {
-    m_server.send(hdl, str, websocketpp::frame::opcode::text);
+    try {
+        std::scoped_lock lock(websocket_send_mtx);
+        m_server.send(hdl, str, websocketpp::frame::opcode::text);
+    } catch (const websocketpp::exception& e) {
+        // Connection closed, silently ignore
+    }
 }
 void broadcast_server::log(connection_hdl, const std::string &str) {
     m_server.get_alog().write(websocketpp::log::alevel::app, str);
 }
 std::string broadcast_server::ip_from_hdl(connection_hdl hdl) {
-    return m_server.get_con_from_hdl(hdl)->get_remote_endpoint();
+    try {
+        auto con = m_server.get_con_from_hdl(hdl);
+        if (con) {
+            return con->get_remote_endpoint();
+        }
+    } catch (...) {
+        // Connection might be closed
+    }
+    return "unknown";
 }
 waterfall_slices_t &broadcast_server::get_waterfall_slices() {
     return waterfall_slices;
@@ -155,6 +214,9 @@ void broadcast_server::on_open_signal(connection_hdl hdl,
     client->set_audio_range(default_l, default_m, default_r);
 
     server::connection_ptr con = m_server.get_con_from_hdl(hdl);
+    if (!con) {
+        return;
+    }
 
     con->set_close_handler(std::bind(&AudioClient::on_close, client));
     con->set_message_handler(std::bind(
@@ -166,6 +228,9 @@ void broadcast_server::on_open_chat(connection_hdl hdl) {
     m_server.set_access_channels(websocketpp::log::alevel::none);
     std::shared_ptr<ChatClient> client = std::make_shared<ChatClient>(hdl, *this);
     server::connection_ptr con = m_server.get_con_from_hdl(hdl);
+    if (!con) {
+        return;
+    }
     con->set_close_handler(std::bind(&ChatClient::on_close_chat, client,
                                      std::placeholders::_1));
     con->set_message_handler(std::bind(
@@ -194,9 +259,14 @@ std::vector<std::future<void>> broadcast_server::signal_loop() {
         auto &[l_idx, r_idx] = slice;
         // If the client is slow, avoid unnecessary buffering and drop the
         // audio
-        auto con = m_server.get_con_from_hdl(data->hdl);
-        if (con->get_buffered_amount() > 50000) {
-            printf("Dropping Audio due to buffering slow client\n");
+        server::connection_ptr con;
+        try {
+            con = m_server.get_con_from_hdl(data->hdl);
+            if (!con || con->get_buffered_amount() > 50000) {
+                continue;
+            }
+        } catch (const std::exception& e) {
+            // Connection closed, skip this client
             continue;
         }
         // Equivalent to
@@ -226,6 +296,9 @@ void broadcast_server::on_open_waterfall(connection_hdl hdl) {
     client->set_waterfall_range(downsample_levels - 1, 0, min_waterfall_fft);
 
     server::connection_ptr con = m_server.get_con_from_hdl(hdl);
+    if (!con) {
+        return;
+    }
     con->set_close_handler(std::bind(&WaterfallClient::on_close, client));
     con->set_message_handler(std::bind(
         &broadcast_server::on_message, this, std::placeholders::_1,
@@ -246,9 +319,14 @@ broadcast_server::waterfall_loop(int8_t *fft_power_quantized) {
             auto &[l_idx, r_idx] = slice;
             // If the client is slow, avoid unnecessary buffering and
             // drop the packet
-            auto con = m_server.get_con_from_hdl(data->hdl);
-            if (con->get_buffered_amount() > 50000) {
-                printf("Dropping Audio due to buffering slow client\n");
+            server::connection_ptr con;
+            try {
+                con = m_server.get_con_from_hdl(data->hdl);
+                if (!con || con->get_buffered_amount() > 50000) {
+                    continue;
+                }
+            } catch (const std::exception& e) {
+                // Connection closed, skip this client
                 continue;
             }
             // Equivalent to

@@ -3,6 +3,7 @@
 
 #include <cstdio>
 #include <memory>
+
 class SampleReader {
   public:
     virtual int read(void *arr, int num) = 0;

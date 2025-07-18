@@ -1,5 +1,6 @@
 #include "samplereader.h"
 #include "utils.h"
+#include "logger.h"
 
 #include <iostream>
 #include <limits>

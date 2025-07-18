@@ -1,29 +1,49 @@
+# PhantomSDR-Plus v2.0.0 Configuration Example - HackRF
+# This configuration is optimized for HackRF One SDR
+# Usage: hackrf_transfer -r - -f 98000000 -s 20000000 | ./spectrumserver --config config.toml
+
 [server]
-port=9002 # Server port
-html_root="frontend/dist/" # HTML files to be hosted
-otherusers=1 # Send where other users are listening, 0 to disable
+port=9002 # Server port for web interface
+html_root="frontend/dist/" # Path to web interface files
+otherusers=1 # Show other users' listening frequencies (1=enabled, 0=disabled)
+threads=2 # Number of processing threads (HackRF benefits from multiple threads)
 
 [websdr]
-register_online=false # If the SDR should be registered on https://sdr-list.xyz then put it to true
-name="ChangeThis" # Name that is shown on https://sdr-list.xyz
-antenna="ChangeThis" # Antenna that is shown on https://sdr-list.xyz
-grid_locator="ChangeThis" # 4 or 6 length Grid Locatlr shown on https://sdr-list.xyz and for the Distance of FT8 Signals
-hostname="" # If you use ddns or something to host with a domain enter it here for https://sdr-list.xyz
+register_online=false # Register WebSDR on https://sdr-list.xyz (true=public, false=private)
+name="My HackRF WebSDR" # Station name displayed on sdr-list.xyz and web interface
+antenna="Wideband Antenna" # Antenna description shown to users
+grid_locator="JO20KV" # 4 or 6 character grid locator for distance calculations
+hostname="" # Domain name for public access (leave empty for local use)
+operator="Your Callsign" # Operator name/callsign displayed in station info
+email="your.email@example.com" # Contact email for station information
+callsign_lookup_url="https://www.qrz.com/db/" # URL for callsign lookups in server info panel
+chat_enabled=true # Enable/disable chat functionality (new in v2.0.0)
+
+[limits]
+# Connection limits to prevent server overload
+audio=1000 # Maximum audio connections
+waterfall=1000 # Maximum waterfall connections
+events=1000 # Maximum event connections
 
 [input]
-sps=20000000 # Input Sample Rate
-fft_size=1048576 # FFT bins
-brightness_offset=0 # Waterfall brightness offset. Reduce to negative if you see black regions in the waterfall
-frequency=98000000 # Baseband frequency
-signal="iq" # real or iq
-accelerator="none" # Accelerator: none, cuda, opencl
-audio_sps=192000 # Audio Sample Rate
-smeter_offset=0
+# HackRF optimized settings - High sample rate capability
+sps=20000000 # Input sample rate (HackRF: 2-20MHz, 20MHz = 20MHz bandwidth)
+fft_size=1048576 # FFT bins for spectral analysis (large for high sample rates)
+brightness_offset=0 # Waterfall brightness adjustment (-50 to +50, negative = darker)
+frequency=98000000 # Center frequency in Hz (98MHz for FM broadcast band)
+signal="iq" # Signal type: "iq" for complex samples (HackRF provides IQ)
+accelerator="opencl" # GPU acceleration recommended for high sample rates
+audio_sps=192000 # Audio sample rate for demodulated output (high for wideband)
+audio_compression="flac" # Audio compression: "flac" (lossless only)
+waterfall_size=2048 # Waterfall display width in pixels
+waterfall_compression="zstd" # Waterfall compression: "zstd" only
+smeter_offset=0 # S-meter calibration offset in dB
 
 [input.driver]
-name="stdin" # Driver name
-format="u8" # Sample format: u8, s8, u16, s16, u32, s32, f32, f64
+name="stdin" # Input driver: "stdin" for piped data from hackrf_transfer
+format="s8" # Sample format for HackRF: s8 (8-bit signed integers)
 
 [input.defaults]
-frequency=92400000 # Default frequency to show user
-modulation="WBFM" # Default modulation
+# Default settings when users first connect
+frequency=92400000 # Default frequency to display (92.4MHz FM)
+modulation="WBFM" # Default modulation mode: AM, FM, USB, LSB, CW, WBFM

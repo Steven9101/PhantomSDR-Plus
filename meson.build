@@ -3,7 +3,9 @@ project(
     'cpp',
     default_options : [
         'optimization=3',
-        #'b_lto=true',
+        'b_lto=true',
+        'b_lto_threads=0',
+        'b_ndebug=if-release',
         #'b_sanitize=address'
     ]
 )
@@ -11,6 +13,7 @@ project(
 add_project_arguments('-march=native', language: 'cpp')
 add_project_arguments('-ggdb3', language: 'cpp')
 add_project_arguments(['-std=c++23','-Wall','-Wextra','-Wpedantic'], language: 'cpp')
+add_project_arguments(['-ffast-math', '-funroll-loops', '-fno-signed-zeros'], language: 'cpp')
 
 
 
@@ -55,17 +58,6 @@ flacpp_dep = dependency('flac++')
 codec_deps += zstd_dep
 codec_deps += flacpp_dep
 
-aom_dep = dependency('aom', required : false)
-if aom_dep.found()
-    codec_deps += aom_dep
-    add_project_arguments('-DHAS_LIBAOM', language : 'cpp')
-endif
-
-opus_dep = dependency('opus', required : false)
-if opus_dep.found()
-    codec_deps += opus_dep
-    add_project_arguments('-DHAS_LIBOPUS', language : 'cpp')
-endif
 
 #if not volk_dep.found() or get_option('wrap_mode') == 'forcefallback'
 #    libvolk = cmake.subproject('libvolk')
@@ -103,6 +95,7 @@ if opencl_dep.found() and clfft_dep.found()
     add_project_arguments('-DCLFFT', language : 'cpp')
 endif
 
+
 #if mkl_dep.found()
 #    fft_deps += mkl_dep
 #    add_project_arguments('-DMKL', language : 'cpp')
@@ -134,7 +127,7 @@ srcs = [
 ]
 srcs += cuda_srcs
 
-# Add cURL library to dependencies
+
 executable(
     'spectrumserver',
     srcs,
@@ -149,7 +142,7 @@ executable(
         codec_deps,
         zlib_dep,
         liquid_dep,
-        curl_dep,  # Add cURL dependency here
+        curl_dep,
     ],
     link_language : 'cpp',
 )
