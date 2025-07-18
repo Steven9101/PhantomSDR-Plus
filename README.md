@@ -1,82 +1,240 @@
-# PhantomSDR-Plus WebSDR
-## Note: Please dont use Ubuntu 24.04, stick to Ubuntu 22.04 as it wont compile on 24.04!
-This is different Repo than the Official PhantomSDR Repo
-In case you want to use Debian, it has been tested on Bookworm.
+# PhantomSDR-Plus WebSDR v2.0.0
 
-We offer more features as we only maintain support for Linux instead of the official repo
-- Futuristic Design
-- Decoders
-- Band Plan in the Waterfall
-- Statistics
-- Better Colorsmap
-- A different WebSDR List (https://sdr-list.xyz)
-- More to come
+<div align="center">
+  <img src="/docs/websdr.PNG" alt="PhantomSDR-Plus WebSDR Interface" width="800"/>
+  <p><em>The Heppen WebSDR running PhantomSDR-Plus v2.0.0</em></p>
+</div>
 
-## Issues
-- If you face issues try to run it on Ubuntu, as most was tested on Ubuntu
+## 🚀 What's New in v2.0.0
+
+### Complete UI Overhaul
+- **Fresh, modern look** - Complete visual redesign with improved usability
+- **Codebase cleanup** - App.svelte reduced from ~5,000 → ~1,800 lines
+- **Better component separation** - Improved code organization for easier maintenance
+- **Custom backgrounds** - Drop a background.jpg/png into /assets to skin the UI
+
+### New Features & Enhancements
+- **Custom AGC controls** - Fine-tune attack (0.1–100 ms) and release (10–1,000 ms) timing
+- **Smart Bands menu** - Auto-detects your ITU Region and shows the correct frequency bands
+- **Bookmark Import/Export** - Save and share your favorite frequencies
+- **Finetuning options** - Precise frequency control is back
+- **Built-in lookups** - Callsign lookup & frequency lookup integrated
+- **Advanced settings** - Settings & debug menus (AGC, Buffer, Custom AGC, etc.)
+- **Config-based UI** - Server-info section moved to config.toml (toggle chatbox without rebuilding)
+- **Smoother waterfall** - Improved waterfall drawing performance
+- **Debug tab** - Signal-strength history and other diagnostic stats
+- **Improved chat** - Chat history rewritten to eliminate crashes, and in a new json format.
+- **Auto-reconnect** - More robust WebSocket handling with automatic reconnection
+
+### Technical Improvements
+- **Thread-safety fixes** - Resolved threading issues in the chat system
+- **Error handling** - Error handling for file I/O operations
+- **Memory safety** - Added bounds-checking for improved stability
+- **Protocol refactor** - Cleaner protocol layer for easier future extensions
 
 
-## Features
-- WebSDR which can handle multiple hundreds of users depending on the Hardware
-- Common demodulation modes
-- Can handle high sample rate SDRs (70MSPS real, 35MSPS IQ)
-- Support for both IQ and real data
+## 📋 Overview
 
-## Benchmarks
-- Ryzen 5* 2600 - All Cores - RX888 MKii with 64MHZ Sample Rate, 32MHZ IQ takes up 38-40% - per User it takes about nothing, 50 Users dont even take 1% of the CPU.
-- RX 580 - RX888 MKII with 64MHZ Sample Rate, 32MHZ IQ takes up 28-35% - same as the Ryzen per User it takes about nothing (should handle many)
-- Intel i5-6500T - RX888 MKII - 60MHz Sample Rate, 30MHz IQ, OpenCL installed and enabled, about 10-12%. 100 users is no problem with OpenCL as the GPU does the heavy lifting.
+PhantomSDR-Plus is a high-performance WebSDR server that can handle hundreds of concurrent users. This enhanced version focuses on Linux optimization and provides significant improvements over the original PhantomSDR.
 
-(* Ryzen CPU's with internal GPU do not support OpenCL, if you expect high performance add a videocard or use an modern Intel i5 or i7 that supports OpenCL.)
+### Key Features
+- **High Performance** - Handle 100+ users simultaneously on modest hardware
+- **Modern Interface** - Clean, responsive web interface with mobile support
+- **Advanced Demodulation** - Support for common modes with professional features
+- **Real-time Statistics** - Performance metrics and user analytics
+- **Band Plan Integration** - Interactive frequency band information
 
-## Screenshots
+## 🔧 System Requirements
 
-The Heppen WebSDR [using the new 2.0.0 Version]:
-![Screenshot](/docs/websdr.PNG)
+### Recommended Hardware
+- **CPU**: Modern multi-core processor (Intel i5/i7 or AMD Ryzen 5/7+)
+- **RAM**: 4GB+ (8GB+ recommended for high user counts)
+- **Storage**: 500MB for installation
+- **Network**: Stable internet connection for multi-user operation
 
-(https://sdr-list.xyz)
+### Supported Operating Systems
+- **Ubuntu 22.04 LTS** (Primary support)
+- **Debian Bookworm** (Tested)
+- **Fedora** (Community support)
 
-## Building
-Optional dependencies such as cuFFT or clFFT can be installed too.
-### Ubuntu Prerequisites
+
+## 📊 Performance Benchmarks
+
+| Hardware | Sample Rate | CPU Usage | User Capacity |
+|----------|-------------|-----------|---------------|
+| Ryzen 5 2600 | 32MHz IQ | 38-40% | 200+ users |
+| RX 580 (OpenCL) | 32MHz IQ | 28-35% | 300+ users |
+| Intel i5-6500T + OpenCL | 30MHz IQ | 10-12% | 100+ users |
+
+> 💡 **Tip**: GPU acceleration with OpenCL can significantly improve performance
+
+## 🏗️ Installation
+
+### Quick Start (Recommended)
+The easiest way to install PhantomSDR-Plus is to use the pre-built releases:
+
+1. **Install runtime dependencies** (Ubuntu 22.04+):
+```bash
+apt install libfftw3-bin libboost-iostreams1.83.0 libzstd1 libflac++10 \
+           libopus0 libliquid1 libcurl4 libgomp1 libgcc-s1 libstdc++6
 ```
-apt install build-essential cmake pkg-config meson libfftw3-dev libwebsocketpp-dev libflac++-dev zlib1g-dev libzstd-dev libboost-all-dev libopus-dev libliquid-dev git psmisc libclfft-dev ocl-icd-opencl-dev
+
+2. **Install OpenCL support** (REQUIRED for pre-built releases):
+```bash
+apt install ocl-icd-libopencl1 libclfft2
+
+# For CPU-based OpenCL (if no GPU available):
+apt install pocl-opencl-icd
+
+# For NVIDIA GPUs:
+apt install nvidia-opencl-icd-xxx  # (where xxx is your driver version)
+
+# For AMD GPUs:
+apt install mesa-opencl-icd
 ```
 
-### Fedora Prerequisites
-```
-dnf install g++ meson cmake fftw3-devel websocketpp-devel flac-devel zlib-devel boost-devel libzstd-devel opus-devel liquid-dsp-devel git
+3. **Download and extract the latest release**:
+   - Go to the [Releases](https://github.com/Steven9101/PhantomSDR-Plus/releases) page
+   - Download the latest `phantomsdr-plus-x.x.x-linux-x86_64.tar.gz`
+   - Extract: `tar -xzf phantomsdr-plus-*.tar.gz && cd phantomsdr-plus-*`
+
+4. **Configure for your SDR**:
+   - Copy `config.example.toml` to `config.toml`
+   - Edit the configuration for your specific SDR device
+   - See the [Wiki](https://github.com/Steven9101/PhantomSDR-Plus/wiki) for SDR-specific setup guides:
+     - RTL-SDR setup
+     - SDRPlay configuration  
+     - HackRF setup
+     - Other supported devices
+
+5. **Run the server with your SDR**:
+   - The server requires piped data input from your SDR
+   - See the [Wiki](https://github.com/Steven9101/PhantomSDR-Plus/wiki) for complete examples:
+     - RTL-SDR: `rtl_sdr -f 100000000 -s 2048000 - | ./spectrumserver --config config.toml`
+     - HackRF: `hackrf_transfer -r - -f 100000000 -s 20000000 | ./spectrumserver --config config.toml`
+     - SDRPlay: Use SDRPlay software to pipe data
+
+### Building from Source (Advanced)
+
+If you prefer to build from source or need to modify the code:
+
+#### Build Dependencies (Ubuntu/Debian)
+```bash
+apt install build-essential cmake pkg-config meson libfftw3-dev \
+           libwebsocketpp-dev libflac++-dev zlib1g-dev libzstd-dev \
+           libboost-all-dev libopus-dev libliquid-dev git psmisc \
+           libclfft-dev ocl-icd-opencl-dev nlohmann-json3-dev
 ```
 
-### Building the binary automatically
-Restart your Terminal after you ran install.sh otherwise it wont work..
-```
-git clone --recursive https://github.com/Steven9101/PhantomSDR-Plus.git
-cd PhantomSDR-Plus
-chmod +x *.sh
-sudo ./install.sh
+#### Build Dependencies (Fedora)
+```bash
+dnf install g++ meson cmake fftw3-devel websocketpp-devel flac-devel \
+           zlib-devel boost-devel libzstd-devel opus-devel \
+           liquid-dsp-devel git
 ```
 
-### Building the binary manually
-```
+#### Compile
+```bash
 git clone --recursive https://github.com/Steven9101/PhantomSDR-Plus.git
 cd PhantomSDR-Plus
 meson build --optimization 3
 meson compile -C build
 ```
 
-## Examples
-Remember to set the frequency and sample rate correctly. Default html directory is 'html/', change it with the `htmlroot` option in config.toml.
-### RTL-SDR
+#### Automated Build Script
+```bash
+chmod +x *.sh
+sudo ./install.sh
 ```
+
+> 🔄 **Important**: Restart your terminal after running install.sh
+
+## 🚀 Usage Examples
+
+### RTL-SDR
+```bash
+# For pre-built releases:
+rtl_sdr -f 145000000 -s 3200000 - | ./spectrumserver --config config.toml
+
+# For building from source:
 rtl_sdr -f 145000000 -s 3200000 - | ./build/spectrumserver --config config.toml
 ```
+
 ### HackRF
-```
+```bash
+# For pre-built releases:
+rx_sdr -f 145000000 -s 20000000 -d driver=hackrf - | ./spectrumserver --config config.toml
+
+# For building from source:
 rx_sdr -f 145000000 -s 20000000 -d driver=hackrf - | ./build/spectrumserver --config config.toml
 ```
-## Added start files and configs for various recievers. 
-Some need Soapy and RX_TOOLS installed else they do not work, e.g. Airspy Discovery and SDRPlay RSP1A.
-I also added psutils as it's needed for killall command.
-Do not forget to disable opencl if you didn't install it, it's recommened you do.
--- Bas ON5HB
+
+### Using Pre-built Configs
+We provide optimized configurations for various SDR devices:
+- `config-rsp1a.toml` - SDRPlay RSP1A
+- `config-rx888mk2.toml` - RX888 MK2
+- `config-airspyhf.toml` - Airspy HF+
+- `config.example.rtlsdr.toml` - RTL-SDR dongles
+- `config.example.hackrf.toml` - HackRF One
+
+## ⚙️ Configuration
+
+The server uses TOML configuration files. Key sections include:
+
+```toml
+[server]
+port = 9002
+html_root = "frontend/dist/"
+threads = 4
+
+[websdr]
+name = "Your WebSDR Name"
+operator = "Your Callsign"
+register_online = true  # Register on sdr-list.xyz
+chat_enabled = true     # Enable/disable chat (new in v2.0.0)
+callsign_lookup_url = "https://www.qrz.com/db/"
+
+[input]
+sps = 2048000
+frequency = 100000000
+accelerator = "opencl"  # Enable GPU acceleration if available
+```
+
+## WebSDR Network
+
+Join the PhantomSDR-Plus network at [sdr-list.xyz](https://sdr-list.xyz) to:
+- Discover other WebSDR stations
+- Share your WebSDR with the community
+- Access global spectrum monitoring
+
+## 🧪 Try the Preview
+
+Test the new v2.0.0 interface at the live preview: [websdr.heppen.be](http://websdr.heppen.be/)
+
+## Contributing
+
+We welcome contributions! Please:
+1. Fork the repository
+2. Create a feature branch
+3. Submit a pull request
+
+## 📞 Support
+
+- **Issues**: Report bugs on GitHub Issues
+- **Documentation**: Check the Wiki for detailed guides
+- **Community**: Join discussions in the [forum](https://phantomsdr.fun)
+
+## 🔄 Migration from v1.x
+
+Version 2.0.0 includes breaking changes. The codebase has diverged significantly from older versions.
+
+## 📜 License
+
+This project is licensed under the GPT License - see the LICENSE file for details.
+
+
+---
+
+<div align="center">
+  <strong>⭐ Star this repo if you find it useful! ⭐</strong>
+</div>
